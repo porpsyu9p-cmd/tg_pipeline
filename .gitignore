@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
+.env
+
+# Telethon session files
+*.session
+
+# State file
+state.json
+
+# Output directory
+out/

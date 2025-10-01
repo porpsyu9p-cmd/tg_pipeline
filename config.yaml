@@ -1,0 +1,14 @@
+channels:
+  - "https://t.me/rflive"
+target_lang: "EN"
+logo:
+  path: "brand/logo.png"
+  position: "bottom-right"
+  margin: 24
+delivery:
+  mode: "dm"
+destination_channel: "@parser_inbox_123"
+merge:
+  window_sec: 600    # 10 минут (можно 300 = 5 минут)
+  lookahead: 2       # проверяем до 2 следующих сообщений
+  only_if_one_has_no_text: true
