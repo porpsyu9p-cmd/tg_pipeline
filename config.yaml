@@ -6,9 +6,18 @@ logo:
   position: "bottom-right"
   margin: 24
 delivery:
-  mode: "dm"
 destination_channel: "@parser_inbox_123"
+  text_only: true
 merge:
   window_sec: 600    # 10 минут (можно 300 = 5 минут)
   lookahead: 2       # проверяем до 2 следующих сообщений
   only_if_one_has_no_text: true
+top_posts:
+  enabled: true
+  period_days: 7
+  top_by:
+    likes: 2
+    comments: 2
+    views: 2
+debug:
+  mirror_to_me: true

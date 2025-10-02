@@ -20,11 +20,12 @@ function App() {
     stopPipeline,
     clearMessages,
   } = usePipeline();
-  const { postLimit, validationError, handlePostLimitChange } = usePostLimit();
+  const { postLimit, validationError, handlePostLimitChange, setPostLimitValue } = usePostLimit();
+  const [periodHours, setPeriodHours] = React.useState(null);
 
   const handleRun = () => {
     if (validationError) return;
-    runPipeline(postLimit);
+    runPipeline(postLimit, periodHours);
   };
 
   return (
@@ -87,6 +88,53 @@ function App() {
                     {validationError && (
                       <p className='text-red-400 text-sm mt-1'>{validationError}</p>
                     )}
+                  </div>
+
+                  <div className='flex flex-wrap gap-2'>
+                    {[5,10,15,20,25,50].map((v) => (
+                      <Button
+                        key={v}
+                        type='button'
+                        variant='secondary'
+                        disabled={status.is_running}
+                        className='bg-gray-800 hover:bg-gray-700 text-gray-200'
+                        onClick={() => setPostLimitValue(v)}
+                      >
+                        {v}
+                      </Button>
+                    ))}
+                  </div>
+
+                  <div className='flex flex-col sm:flex-row gap-2 items-end'>
+                    <div>
+                      <label className='block text-sm font-medium text-gray-400 mb-2'>
+                        Период (часы)
+                      </label>
+                      <div className='flex flex-wrap gap-2'>
+                        {[1,2,3,6,12,24].map((h) => (
+                          <Button
+                            key={h}
+                            type='button'
+                            variant='secondary'
+                            disabled={status.is_running}
+                            className={`bg-gray-800 hover:bg-gray-700 text-gray-200 ${periodHours===h ? 'ring-2 ring-blue-500' : ''}`}
+                            onClick={() => setPeriodHours(h)}
+                          >
+                            {h}ч
+                          </Button>
+                        ))}
+                        <Button
+                          type='button'
+                          variant='ghost'
+                          disabled={status.is_running}
+                          className='text-gray-300'
+                          onClick={() => setPeriodHours(null)}
+                        >
+                          сброс
+                        </Button>
+                      </div>
+                      <p className='text-xs text-gray-500 mt-1'>Если не выбрано — используется настройка в config.yaml</p>
+                    </div>
                   </div>
 
                   <ControlButtons

@@ -34,12 +34,16 @@ class PipelineAPI {
     return response.data;
   }
 
-  async runPipeline(limit) {
+  async runPipeline(limit, periodHours) {
     if (limit < 1 || limit > 1000) {
       throw new Error('Limit must be between 1 and 1000');
     }
 
-    const response = await axios.post(`${this.baseURL}/run`, { limit });
+    const payload = { limit };
+    if (typeof periodHours === 'number') {
+      payload.period_hours = periodHours;
+    }
+    const response = await axios.post(`${this.baseURL}/run`, payload);
     return response.data;
   }
 

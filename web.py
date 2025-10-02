@@ -1,13 +1,24 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import asyncio
+from pydantic import BaseModel
 
 # Импортируем вашу основную функцию и управление состоянием
 from main import main as run_pipeline_main
 from state_manager import get_state, set_running, reset_state, set_finished
 
 app = FastAPI()
+
+# CORS для связи фронтенда (Vite/React/Next) с API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Глобальная переменная для отслеживания задачи
 current_task: asyncio.Task = None
@@ -102,13 +113,13 @@ async def status_endpoint():
     """Возвращает текущее состояние прогресса."""
     return get_state()
 
-async def run_pipeline_task(limit: int):
+async def run_pipeline_task(limit: int, period_hours: int | None = None):
     """Обёртка для запуска задачи и управления состоянием."""
     global current_task
     set_running(True)
     try:
         print(f"Starting pipeline with limit: {limit}")
-        await run_pipeline_main(limit=limit)
+        await run_pipeline_main(limit=limit, period_hours=period_hours)
         print("Pipeline finished successfully.")
     except asyncio.CancelledError:
         print("Pipeline task was cancelled.")
@@ -128,11 +139,12 @@ async def trigger_pipeline(request: Request):
     
     data = await request.json()
     limit = data.get("limit", 100)
+    period_hours = data.get("period_hours")
 
     # Сбрасываем состояние перед новым запуском
     reset_state()
     
-    task = asyncio.create_task(run_pipeline_task(limit=limit))
+    task = asyncio.create_task(run_pipeline_task(limit=limit, period_hours=period_hours))
     current_task = task
     
     return {"message": f"Процесс парсинга запущен. Лимит: {limit} постов."}
@@ -146,6 +158,41 @@ async def stop_pipeline_endpoint():
 
     current_task.cancel()
     return {"message": "Команда на остановку отправлена. Процесс завершится в ближайшее время."}
+
+# --- Совместимость с фронтендом: алиасы под ожидаемые пути ---
+@app.post("/run")
+async def run_alias(request: Request):
+    # Делегируем в основной обработчик
+    return await trigger_pipeline(request)
+
+@app.post("/stop")
+async def stop_alias():
+    # Делегируем в основной обработчик
+    return await stop_pipeline_endpoint()
+
+# Диагностический эндпоинт: простая отправка текста в канал
+class EchoPayload(BaseModel):
+    text: str = "test from API"
+
+@app.post("/debug/send-text")
+async def debug_send_text(payload: EchoPayload):
+    try:
+        from telethon import TelegramClient
+        from dotenv import load_dotenv
+        import os
+        load_dotenv()
+        api_id = int(os.getenv("TELEGRAM_API_ID"))
+        api_hash = os.getenv("TELEGRAM_API_HASH")
+        client = TelegramClient("session", api_id, api_hash)
+        await client.start()
+        await client.send_message("me", f"[debug] {payload.text}")
+        # отправка в канал назначения
+        from main import TARGET
+        await client.send_message(TARGET, f"[debug] {payload.text}")
+        await client.disconnect()
+        return {"ok": True, "message": "debug text sent"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
 
 if __name__ == "__main__":
     print("Запустите сервер командой: uvicorn web:app --reload")

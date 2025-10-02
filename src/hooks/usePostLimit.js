@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { validatePostLimit } from '../utils/validation';
 
 const usePostLimit = () => {
-  const [postLimit, setPostLimit] = useState(100);
+  const [postLimit, setPostLimit] = useState(3);
   const [validationError, setValidationError] = useState('');
 
   const handlePostLimitChange = useCallback((event) => {
@@ -13,10 +13,18 @@ const usePostLimit = () => {
     setValidationError(error);
   }, []);
 
+  const setPostLimitValue = useCallback((value) => {
+    const numeric = parseInt(value) || 0;
+    setPostLimit(numeric);
+    const error = validatePostLimit(numeric);
+    setValidationError(error);
+  }, []);
+
   return {
     postLimit,
     validationError,
     handlePostLimitChange,
+    setPostLimitValue,
   };
 };
 
