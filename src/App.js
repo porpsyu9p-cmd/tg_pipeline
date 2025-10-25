@@ -8,6 +8,8 @@ import { MessageAlerts } from './components/MessageAlerts';
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Input } from './components/ui/input';
 import { Button } from './components/ui/button';
+import TranslationTester from './components/TranslationTester';
+import ImageGptRewriter from './components/ImageGptRewriter';
 
 function App() {
   const {
@@ -150,6 +152,25 @@ function App() {
               <MessageAlerts error={error} success={success} />
             </CardContent>
           </Card>
+
+          {/* Translation Tester */}
+          <div className='mt-8'>
+            <Card className='shadow-2xl bg-black/80 backdrop-blur-sm border-gray-800'>
+              <CardHeader>
+                <CardTitle className='text-2xl font-bold bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-clip-text text-transparent'>
+                  Тест перевода (ChatGPT)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <TranslationTester />
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* GPT Image Rewriter (experimental) */}
+          <div className='mt-8'>
+            <ImageGptRewriter />
+          </div>
         </div>
       </div>
     </div>

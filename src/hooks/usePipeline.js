@@ -26,13 +26,13 @@ export const usePipeline = () => {
     }
   }, []);
 
-  const runPipeline = useCallback(async (postLimit) => {
+  const runPipeline = useCallback(async (postLimit, periodHours) => {
     setIsLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const result = await pipelineAPI.runPipeline(postLimit);
+      const result = await pipelineAPI.runPipeline(postLimit, periodHours);
       setSuccess(result.message);
     } catch (err) {
       const errorMessage = err.response?.data?.message || MESSAGES.ERROR.PIPELINE_START;
@@ -103,6 +103,7 @@ export const usePipeline = () => {
     isLoading,
     error,
     success,
+    fetchStatus,
     runPipeline,
     stopPipeline,
     clearMessages,

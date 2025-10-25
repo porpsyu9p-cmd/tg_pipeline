@@ -6,7 +6,7 @@ logo:
   position: "bottom-right"
   margin: 24
 delivery:
-destination_channel: "@parser_inbox_123"
+  destination_channel: "@parser_inbox_123"
   text_only: true
 merge:
   window_sec: 600    # 10 минут (можно 300 = 5 минут)
