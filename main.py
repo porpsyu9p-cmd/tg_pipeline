@@ -1,17 +1,16 @@
 # main.py — ТЕКСТ + МЕДИА одним постом (альбомом), бережная склейка соседних сообщений
-import os, asyncio, yaml, pathlib, json, shutil, subprocess
+import os, asyncio, yaml, pathlib, shutil, subprocess
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from telethon import TelegramClient
 from telethon.errors import (
-    ChatAdminRequiredError,
-    ChatWriteForbiddenError,
-    ChannelPrivateError,
     FloodWaitError,
-    UserBannedInChannelError,
 )
 from PIL import Image
-from state_manager import increment_processed, set_total
+from state_manager import increment_processed, set_total, get_last_id, set_last_id
+from firebase_manager import save_post
+# Убираем импорт, так как перевод здесь больше не нужен
+# from translation import translate_text
 
 # === 0. Ключи и конфиг ===
 load_dotenv()
@@ -21,24 +20,13 @@ TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
 with open("config.yaml","r",encoding="utf-8") as f:
     CFG = yaml.safe_load(f)
 
-# Определяем целевой чат/канал из секции delivery
-DELIVERY = CFG.get("delivery", {}) or {}
-TARGET = (
-    DELIVERY.get("destination_channel")
-    or CFG.get("destination_channel")
-)
-if not TARGET:
-    raise RuntimeError("destination_channel is not configured in config.yaml under delivery.destination_channel")
-print(f"Delivery target channel: {TARGET}")
-
-DEBUG_CFG = CFG.get("debug", {}) or {}
-MIRROR_TO_ME = bool(DEBUG_CFG.get("mirror_to_me", False))
-TEXT_ONLY = bool(DELIVERY.get("text_only", False))
+# Целевой канал и доставка больше не нужны
+# DEBUG_CFG = CFG.get("debug", {}) or {}
+# MIRROR_TO_ME = bool(DEBUG_CFG.get("mirror_to_me", False))
 OUT = pathlib.Path.home() / "Library" / "Caches" / "tg_pipeline"   # кэш, чтобы не засорять проект
 OUT.mkdir(exist_ok=True, parents=True)
 
-STATE_PATH = pathlib.Path("state.json")
-STATE = json.loads(STATE_PATH.read_text()) if STATE_PATH.exists() else {}
+# Логика работы с state.json полностью заменена на Firestore через state_manager.py
 
 # === 1. Помощники для медиа ===
 def ffmpeg_exists() -> bool:
@@ -179,7 +167,7 @@ async def process_top_posts(client: TelegramClient, ch: str, period_days: float,
             if mid in unique_ids:
                 continue
             unique_ids.add(mid)
-            unique_msgs.append(item['message'])
+            unique_msgs.append(item)
             count_added += 1
 
     print(f"Selected unique messages after quotas: {len(unique_msgs)}")
@@ -194,14 +182,13 @@ async def process_top_posts(client: TelegramClient, ch: str, period_days: float,
         # collected уже без видео/GIF; сортируем по дате у исходных сообщений
         collected_sorted = sorted(collected, key=lambda x: x['message'].date, reverse=True)
         for item in collected_sorted:
-            unique_msgs.append(item['message'])
+            unique_msgs.append(item)
             if isinstance(desired_total, int) and desired_total > 0 and len(unique_msgs) >= desired_total:
                 break
 
     # Второй фолбэк: если и после добора по периоду пусто, берём последние текстовые посты без ограничения периода
     if not unique_msgs:
         print("Fallback by date yielded 0 messages, expanding search window (ignore period)...")
-        expanded = []
         async for m2 in client.iter_messages(entity, limit=500):
             media = getattr(m2, "media", None)
             doc = getattr(media, "document", None) if media else None
@@ -210,10 +197,18 @@ async def process_top_posts(client: TelegramClient, ch: str, period_days: float,
             is_animated = any(getattr(a, "animated", False) or a.__class__.__name__ == "DocumentAttributeAnimated" for a in attrs)
             if (mime.startswith("video") or mime == "image/gif" or is_animated):
                 continue
-            expanded.append(m2)
-            if isinstance(desired_total, int) and desired_total > 0 and len(expanded) >= desired_total:
+            
+            # Оборачиваем в совместимую структуру
+            unique_msgs.append({
+                'message': m2,
+                'likes': 0,
+                'comments': int(getattr(m2, 'replies', None).replies if getattr(m2, 'replies', None) else 0),
+                'views': int(getattr(m2, 'views', 0) or 0),
+            })
+
+            if isinstance(desired_total, int) and desired_total > 0 and len(unique_msgs) >= desired_total:
                 break
-        unique_msgs = expanded
+        
     print(f"Final messages to send: {len(unique_msgs)}")
 
     # Проставим total для прогресса
@@ -221,48 +216,37 @@ async def process_top_posts(client: TelegramClient, ch: str, period_days: float,
 
     # Отправляем в целевой канал, соблюдая текущие правила склейки/медиа
     # Здесь без склейки; отправляем как есть
-    for m in unique_msgs:
+    for item in unique_msgs:
+        m = item['message']
         caption = (m.message or "").strip()
         media_paths = await download_and_brand(client, m)
-        try:
-            print(f"Sending message id={m.id} to {TARGET} with media_count={len(media_paths)}")
-            if media_paths and not TEXT_ONLY:
-                if len(media_paths) > 1:
-                    try:
-                        await client.send_file(TARGET, media_paths, caption=caption, album=True)
-                    except Exception as e:
-                        print("Album send error:", e)
-                        await client.send_file(TARGET, media_paths[0], caption=caption)
-                        for p in media_paths[1:]:
-                            await client.send_file(TARGET, p)
-            else:
-                await client.send_message(TARGET, caption or "(media only)", link_preview=False)
-            print(f"Sent message id={m.id}")
-            # Диагностическое зеркалирование в Saved Messages
-            if MIRROR_TO_ME:
-                try:
-                    if media_paths and not TEXT_ONLY:
-                        await client.send_file("me", media_paths[0], caption=f"[mirror] {caption}")
-                    else:
-                        await client.send_message("me", f"[mirror] {caption}")
-                except Exception as e:
-                    print("Mirror to me failed:", e)
-        except (ChatAdminRequiredError, ChatWriteForbiddenError, ChannelPrivateError, UserBannedInChannelError) as e:
-            print(f"Send failed due to permissions: {e.__class__.__name__}: {e}")
-            print("Hint: добавьте аккаунт (из session.session) в администраторы канала и дайте право 'Публикация сообщений'.")
-            if MIRROR_TO_ME:
-                try:
-                    await client.send_message("me", f"[mirror-note] Send to {TARGET} failed: {e.__class__.__name__}: {e}")
-                except Exception:
-                    pass
-        except FloodWaitError as e:
-            print(f"Send failed due to flood wait: wait {e.seconds} seconds")
-        except Exception as e:
-            print(f"Unexpected send error: {e.__class__.__name__}: {e}")
-        finally:
-            for p in media_paths:
-                try: pathlib.Path(p).unlink(missing_ok=True)
-                except Exception as e: print("Cleanup error:", e)
+        
+        # --- Собираем данные для сохранения в Firestore ---
+        post_to_save = {
+            "source_channel": ch,
+            "original_message_id": m.id,
+            "original_ids": [m.id],
+            "original_date": m.date,
+            "content": caption,
+            "translated_content": None, # Будет заполнено позже
+            "target_lang": None,      # Будет заполнено позже
+            "has_media": bool(media_paths),
+            "media_count": len(media_paths),
+            "is_merged": False,
+            "is_top_post": True,
+            "original_views": item.get('views', 0),
+            "original_likes": item.get('likes', 0),
+            "original_comments": item.get('comments', 0),
+        }
+        save_post(post_to_save)
+
+        # --- ОТПРАВКА В TELEGRAM ОТКЛЮЧЕНА ---
+        print(f"Post id={m.id} saved to Firestore. Skipping Telegram send.")
+
+        # Чистим кэш после сохранения
+        for p in media_paths:
+            try: pathlib.Path(p).unlink(missing_ok=True)
+            except Exception as e: print("Cleanup error:", e)
 
         increment_processed()
 
@@ -270,19 +254,22 @@ async def process_top_posts(client: TelegramClient, ch: str, period_days: float,
 async def process_channel(client: TelegramClient, ch: str, limit: int):
     print(f"== Channel: {ch}")
     entity = await client.get_entity(ch)
-    last_id = STATE.get(ch, 0)
+    # last_id = get_last_id(ch) # Проверка на дубликаты отключена
 
-    # Используем лимит из веб-интерфейса
+    # Запрашиваем последние N постов без учета min_id
     msgs = [m async for m in client.iter_messages(entity, limit=limit)]
+    if not msgs:
+        print(f"No messages found for {ch}")
+        set_total(0)
+        return
+
     set_total(len(msgs)) # Устанавливаем общее количество для этого канала
     msgs.reverse()  # от старых к новым
 
-    i = 0
-    while i < len(msgs):
+    for m in msgs:
         # На каждой итерации даём возможность циклу событий обработать отмену
         await asyncio.sleep(0)
 
-        m = msgs[i]
         # Пропускаем посты с видео или GIF (анимации)
         try:
             media = getattr(m, "media", None)
@@ -291,7 +278,6 @@ async def process_channel(client: TelegramClient, ch: str, limit: int):
             attrs = getattr(doc, "attributes", []) or []
             is_animated = any(getattr(a, "animated", False) or a.__class__.__name__ == "DocumentAttributeAnimated" for a in attrs)
             if (mime.startswith("video") or mime == "image/gif" or is_animated):
-                i += 1
                 increment_processed()
                 continue
         except Exception:
@@ -301,102 +287,48 @@ async def process_channel(client: TelegramClient, ch: str, limit: int):
         text = (m.message or "").strip()
         media_paths = await download_and_brand(client, m)
 
-        # --- БЕРЕЖНАЯ СКЛЕЙКА (читаем настройки из config.yaml) ---
-        MERGE_WINDOW_SEC = int(CFG.get("merge", {}).get("window_sec", 600))   # 10 мин по умолчанию
-        MERGE_LOOKAHEAD  = int(CFG.get("merge", {}).get("lookahead", 2))
-        ONLY_IF_ONE_NO_TEXT = bool(CFG.get("merge", {}).get("only_if_one_has_no_text", True))
+        # --- Логика склейки полностью удалена ---
 
-        def has_text(s: str) -> bool:
-            return bool(s and s.strip())
-
-        def has_media(paths: list) -> bool:
-            return bool(paths)
-
-        # Склеиваем, если ровно одному чего-то не хватает (или по ослабленному правилу)
-        cond_start = (has_text(text) ^ has_media(media_paths)) or \
-                     (not ONLY_IF_ONE_NO_TEXT and (has_text(text) or has_media(media_paths)))
-
-        if cond_start:
-            j = 1
-            while j <= MERGE_LOOKAHEAD and (i + j) < len(msgs):
-                n = msgs[i + j]
-                if n.id <= last_id:
-                    j += 1; continue
-                # далеко по времени — выходим
-                if abs((m.date - n.date).total_seconds()) > MERGE_WINDOW_SEC:
-                    break
-                # не склеиваем альбомы
-                if getattr(n, "grouped_id", None):
-                    break
-
-                more_text = (n.message or "").strip()
-                more_media = await download_and_brand(client, n)
-
-                merge_ok = False
-                if ONLY_IF_ONE_NO_TEXT:
-                    if (has_text(text) and not has_text(more_text) and has_media(more_media)) \
-                       or (has_media(media_paths) and not has_text(text) and has_text(more_text)):
-                        merge_ok = True
-                else:
-                    if (has_text(text) and has_media(more_media)) or \
-                       (has_media(media_paths) and has_text(more_text)):
-                        merge_ok = True
-
-                if merge_ok:
-                    if has_text(more_text):
-                        text = (text + ("\n\n" + more_text)).strip()
-                    if has_media(more_media):
-                        media_paths += more_media
-                    STATE[ch] = n.id
-                    i += 1          # «съели» соседнее
-                else:
-                    j += 1
-
-        # --- Формируем подпись и отправляем одним постом ---
-        # Чтоб не было большой карточки-превью, «ломаем» ссылку точкой в квадратных скобках
+        # --- Собираем данные для сохранения в Firestore ---
         caption = (text or "").strip()
 
-        try:
-            if media_paths:
-                if len(media_paths) > 1:
-                    try:
-                        await client.send_file(TARGET, media_paths, caption=caption, album=True)
-                    except Exception as e:
-                        print("Album send error:", e)
-                        await client.send_file(TARGET, media_paths[0], caption=caption)
-                        for p in media_paths[1:]:
-                            await client.send_file(TARGET, p)
-                else:
-                    await client.send_file(TARGET, media_paths[0], caption=caption)
-            else:
-                await client.send_message(TARGET, caption or "(media only)", link_preview=False)
-        finally:
-            # чистим кэш
-            for p in media_paths:
-                try: pathlib.Path(p).unlink(missing_ok=True)
-                except Exception as e: print("Cleanup error:", e)
+        post_to_save = {
+            "source_channel": ch,
+            "original_message_id": m.id,
+            "original_ids": [m.id], # Теперь всегда один ID
+            "original_date": m.date,
+            "content": caption,
+            "translated_content": None, # Будет заполнено позже
+            "target_lang": None,      # Будет заполнено позже
+            "has_media": bool(media_paths),
+            "media_count": len(media_paths),
+            "is_merged": False, # Склейка отключена
+            "is_top_post": False,
+            "original_views": m.views or 0,
+        }
+        
+        # --- Сохраняем пост и чистим медиа ---
+        save_post(post_to_save)
 
-        STATE[ch] = max(STATE.get(ch, 0), m.id)
-        STATE_PATH.write_text(json.dumps(STATE))
+        # --- ОТПРАВКА В TELEGRAM ОТКЛЮЧЕНА ---
+        # Теперь только чистим кэш после сохранения
+        for p in media_paths:
+            try: pathlib.Path(p).unlink(missing_ok=True)
+            except Exception as e: print("Cleanup error:", e)
+
+        # Обновление last_id больше не требуется
+        # current_last_id = get_last_id(ch)
+        # set_last_id(ch, max(current_last_id, m.id))
         increment_processed() # Увеличиваем счетчик после успешной обработки
-        i += 1
 
 async def main(limit: int = 100, period_hours: int | None = None):
     """Основная функция, теперь принимает лимит постов."""
     client = TelegramClient("session", TELEGRAM_API_ID, TELEGRAM_API_HASH)
     try:
         await client.start()
-        # Диагностика цели доставки
-        try:
-            me = await client.get_me()
-            tgt = await client.get_entity(TARGET)
-            cls = tgt.__class__.__name__
-            title = getattr(tgt, 'title', None) or getattr(tgt, 'username', None) or str(TARGET)
-            is_broadcast = bool(getattr(tgt, 'broadcast', False))
-            is_megagroup = bool(getattr(tgt, 'megagroup', False))
-            print(f"Will send as {me.username or me.first_name} to '{title}' ({cls}), broadcast={is_broadcast}, megagroup={is_megagroup}")
-        except Exception as e:
-            print("Target entity diagnostics failed:", e)
+        me = await client.get_me()
+        print(f"Started session as {me.username or me.first_name}.")
+        
         top_cfg = (CFG.get("top_posts") or {})
         enabled_top = bool(top_cfg.get("enabled", False))
         if enabled_top:

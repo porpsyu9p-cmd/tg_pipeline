@@ -8,6 +8,11 @@ from pydantic import BaseModel
 # Импортируем вашу основную функцию и управление состоянием
 from main import main as run_pipeline_main
 from state_manager import get_state, set_running, reset_state, set_finished
+from firebase_manager import initialize_firestore, get_all_posts, get_post, update_post
+from translation import translate_text
+
+# Инициализируем Firestore при старте
+initialize_firestore()
 
 app = FastAPI()
 
@@ -169,6 +174,68 @@ async def run_alias(request: Request):
 async def stop_alias():
     # Делегируем в основной обработчик
     return await stop_pipeline_endpoint()
+
+# --- Эндпоинт для перевода текста ---
+class TranslationPayload(BaseModel):
+    text: str
+    target_lang: str = "EN"
+    prompt: str | None = None
+
+@app.post("/translate")
+async def translate_endpoint(payload: TranslationPayload):
+    """Переводит текст с помощью OpenAI API."""
+    try:
+        translated = await translate_text(
+            text=payload.text,
+            target_lang=payload.target_lang,
+            custom_prompt_template=payload.prompt
+        )
+        return {"ok": True, "translated_text": translated}
+    except Exception as e:
+        print(f"Translation endpoint error: {e}")
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+
+# --- Эндпоинты для управления сохраненными постами ---
+
+@app.get("/posts")
+async def list_posts_endpoint():
+    """Возвращает список всех сохраненных постов."""
+    posts = get_all_posts()
+    return {"ok": True, "posts": posts}
+
+class ManualTranslationPayload(BaseModel):
+    target_lang: str = "EN"
+
+@app.post("/posts/{post_id}/translate")
+async def translate_post_endpoint(post_id: str, payload: ManualTranslationPayload):
+    """Переводит конкретный сохраненный пост и обновляет его в Firestore."""
+    post = get_post(post_id)
+    if not post:
+        return JSONResponse(status_code=404, content={"ok": False, "error": "Post not found"})
+    
+    original_text = post.get("content")
+    if not original_text:
+        return JSONResponse(status_code=400, content={"ok": False, "error": "Post has no text to translate"})
+
+    try:
+        translated = await translate_text(
+            text=original_text,
+            target_lang=payload.target_lang
+        )
+        
+        # Обновляем документ в Firestore
+        updates = {
+            "translated_content": translated,
+            "target_lang": payload.target_lang
+        }
+        update_post(post_id, updates)
+        
+        return {"ok": True, "message": "Post translated and updated successfully."}
+    except Exception as e:
+        print(f"Manual translation endpoint error: {e}")
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
 
 # Диагностический эндпоинт: простая отправка текста в канал
 class EchoPayload(BaseModel):

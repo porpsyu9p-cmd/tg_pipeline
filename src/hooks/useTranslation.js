@@ -1,101 +1,38 @@
-import { useState, useCallback } from 'react';
-import { translationService } from '../services/translation';
+import { useState } from 'react';
+import { translateText } from '../services/api';
 
 export const useTranslation = () => {
+  const [translatedText, setTranslatedText] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
-  const [error, setError] = useState(null);
-  const [config, setConfig] = useState(null);
+  const [translationError, setTranslationError] = useState(null);
 
-  const translateText = useCallback(async (text, options = {}) => {
+  const handleTranslate = async (text, lang, prompt) => {
     if (!text || !text.trim()) {
-      return text;
+      setTranslationError('Text for translation cannot be empty.');
+      return;
     }
-
     setIsTranslating(true);
-    setError(null);
-
+    setTranslationError(null);
     try {
-      const result = await translationService.translateText(text, options);
-      return result.translated;
+      const response = await translateText(text, lang, prompt);
+      if (response.data.ok) {
+        setTranslatedText(response.data.translated_text);
+      } else {
+        throw new Error(response.data.error || 'Failed to translate');
+      }
     } catch (err) {
-      setError(err.message);
-      console.error('Translation error:', err);
-      return text; // Возвращаем оригинал при ошибке
+      const errorMsg = err.response?.data?.error || err.message || 'An unknown error occurred';
+      setTranslationError(errorMsg);
+      setTranslatedText(''); // Clear previous successful translation
     } finally {
       setIsTranslating(false);
     }
-  }, []);
-
-  const translateBatch = useCallback(async (texts, options = {}) => {
-    if (!texts || texts.length === 0) {
-      return [];
-    }
-
-    setIsTranslating(true);
-    setError(null);
-
-    try {
-      const result = await translationService.translateBatch(texts, options);
-      return result.results.map(r => r.translated);
-    } catch (err) {
-      setError(err.message);
-      console.error('Batch translation error:', err);
-      return texts; // Возвращаем оригиналы при ошибке
-    } finally {
-      setIsTranslating(false);
-    }
-  }, []);
-
-  const loadConfig = useCallback(async () => {
-    try {
-      const result = await translationService.getConfig();
-      setConfig(result.config);
-      return result.config;
-    } catch (err) {
-      setError(err.message);
-      console.error('Config load error:', err);
-      return null;
-    }
-  }, []);
-
-  const checkHealth = useCallback(async () => {
-    try {
-      const result = await translationService.checkHealth();
-      return result.status === 'healthy';
-    } catch (err) {
-      console.error('Health check error:', err);
-      return false;
-    }
-  }, []);
-
-  const translateImage = useCallback(async (imageBase64, options = {}) => {
-    if (!imageBase64) {
-      return null;
-    }
-
-    setIsTranslating(true);
-    setError(null);
-
-    try {
-      const result = await translationService.translateImage(imageBase64, options);
-      return result.translated;
-    } catch (err) {
-      setError(err.message);
-      console.error('Image translation error:', err);
-      return null;
-    } finally {
-      setIsTranslating(false);
-    }
-  }, []);
+  };
 
   return {
-    translateText,
-    translateBatch,
-    translateImage,
-    loadConfig,
-    checkHealth,
+    translatedText,
     isTranslating,
-    error,
-    config,
+    translationError,
+    handleTranslate,
   };
 };

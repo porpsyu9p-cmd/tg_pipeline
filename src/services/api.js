@@ -1,56 +1,36 @@
 import axios from 'axios';
 
-// Настройка axios для логирования
-axios.interceptors.request.use(
-  (config) => {
-    console.log(`Making ${config.method?.toUpperCase()} request to ${config.url}`);
-    return config;
-  },
-  (error) => {
-    console.error('Request error:', error);
-    return Promise.reject(error);
-  }
-);
-
-axios.interceptors.response.use(
-  (response) => {
-    console.log(`Response from ${response.config.url}:`, response.status);
-    return response;
-  },
-  (error) => {
-    console.error('Response error:', error);
-    const message = error.response?.data?.detail || error.message || 'An error occurred';
-    return Promise.reject(new Error(message));
-  }
-);
+const api = axios.create({
+  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000',
+});
 
 class PipelineAPI {
-  constructor() {
-    this.baseURL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+  run(limit = 100, period_hours = null) {
+    return api.post('/run', { limit, period_hours });
   }
 
-  async getStatus() {
-    const response = await axios.get(`${this.baseURL}/status`);
-    return response.data;
+  stop() {
+    return api.post('/stop');
   }
 
-  async runPipeline(limit, periodHours) {
-    if (limit < 1 || limit > 1000) {
-      throw new Error('Limit must be between 1 and 1000');
-    }
-
-    const payload = { limit };
-    if (typeof periodHours === 'number') {
-      payload.period_hours = periodHours;
-    }
-    const response = await axios.post(`${this.baseURL}/run`, payload);
-    return response.data;
-  }
-
-  async stopPipeline() {
-    const response = await axios.post(`${this.baseURL}/stop`);
-    return response.data;
+  status() {
+    return api.get('/status');
   }
 }
 
 export const pipelineAPI = new PipelineAPI();
+
+// Обновленный эндпоинт для перевода
+export const translateText = (text, target_lang = 'EN', prompt = null) => {
+  return api.post('/translate', { text, target_lang, prompt });
+};
+
+// --- API для работы с постами ---
+
+export const getPosts = () => {
+  return api.get('/posts');
+};
+
+export const translatePost = (postId, target_lang = 'EN') => {
+  return api.post(`/posts/${postId}/translate`, { target_lang });
+};

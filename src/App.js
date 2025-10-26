@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Input } from './components/ui/input';
 import { Button } from './components/ui/button';
 import TranslationTester from './components/TranslationTester';
-import ImageGptRewriter from './components/ImageGptRewriter';
+import PostsList from './components/PostsList';
 
 function App() {
   const {
@@ -93,7 +93,7 @@ function App() {
                   </div>
 
                   <div className='flex flex-wrap gap-2'>
-                    {[5,10,15,20,25,50].map((v) => (
+                    {[5, 10, 15, 20, 25, 50].map((v) => (
                       <Button
                         key={v}
                         type='button'
@@ -113,13 +113,15 @@ function App() {
                         Период (часы)
                       </label>
                       <div className='flex flex-wrap gap-2'>
-                        {[1,2,3,6,12,24].map((h) => (
+                        {[1, 2, 3, 6, 12, 24].map((h) => (
                           <Button
                             key={h}
                             type='button'
                             variant='secondary'
                             disabled={status.is_running}
-                            className={`bg-gray-800 hover:bg-gray-700 text-gray-200 ${periodHours===h ? 'ring-2 ring-blue-500' : ''}`}
+                            className={`bg-gray-800 hover:bg-gray-700 text-gray-200 ${
+                              periodHours === h ? 'ring-2 ring-blue-500' : ''
+                            }`}
                             onClick={() => setPeriodHours(h)}
                           >
                             {h}ч
@@ -135,7 +137,9 @@ function App() {
                           сброс
                         </Button>
                       </div>
-                      <p className='text-xs text-gray-500 mt-1'>Если не выбрано — используется настройка в config.yaml</p>
+                      <p className='text-xs text-gray-500 mt-1'>
+                        Если не выбрано — используется настройка в config.yaml
+                      </p>
                     </div>
                   </div>
 
@@ -155,21 +159,12 @@ function App() {
 
           {/* Translation Tester */}
           <div className='mt-8'>
-            <Card className='shadow-2xl bg-black/80 backdrop-blur-sm border-gray-800'>
-              <CardHeader>
-                <CardTitle className='text-2xl font-bold bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-clip-text text-transparent'>
-                  Тест перевода (ChatGPT)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <TranslationTester />
-              </CardContent>
-            </Card>
+            <TranslationTester />
           </div>
 
-          {/* GPT Image Rewriter (experimental) */}
+          {/* Saved Posts List */}
           <div className='mt-8'>
-            <ImageGptRewriter />
+            <PostsList />
           </div>
         </div>
       </div>

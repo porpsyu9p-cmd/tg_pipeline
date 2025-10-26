@@ -19,8 +19,8 @@ export const usePipeline = () => {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const data = await pipelineAPI.getStatus();
-      setStatus(data);
+      const response = await pipelineAPI.status();
+      setStatus(response.data);
     } catch (err) {
       console.error(MESSAGES.ERROR.STATUS_FETCH, err);
     }
@@ -32,8 +32,8 @@ export const usePipeline = () => {
     setSuccess(null);
 
     try {
-      const result = await pipelineAPI.runPipeline(postLimit, periodHours);
-      setSuccess(result.message);
+      const response = await pipelineAPI.run(postLimit, periodHours);
+      setSuccess(response.data.message);
     } catch (err) {
       const errorMessage = err.response?.data?.message || MESSAGES.ERROR.PIPELINE_START;
       setError(errorMessage);
@@ -47,8 +47,8 @@ export const usePipeline = () => {
     setError(null);
 
     try {
-      const result = await pipelineAPI.stopPipeline();
-      setSuccess(result.message);
+      const response = await pipelineAPI.stop();
+      setSuccess(response.data.message);
     } catch (err) {
       const errorMessage = err.response?.data?.message || MESSAGES.ERROR.PIPELINE_STOP;
       setError(errorMessage);
