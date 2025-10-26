@@ -6,7 +6,7 @@ def initialize_firestore():
     if not firebase_admin._apps:
         import os
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        cred_path = os.path.join(base_dir, "..", "shared", "firebase-credentials.json")
+        cred_path = os.path.join(base_dir, "firebase-credentials.json")
         cred = credentials.Certificate(cred_path)
         firebase_admin.initialize_app(cred)
     

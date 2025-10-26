@@ -9,7 +9,7 @@ nano .env  # укажите API ключи
 # Firebase
 # Скачайте firebase-credentials.json из Firebase Console
 # (Project Settings → Service Accounts → Generate new private key)
-mv ~/Downloads/firebase-credentials.json ../shared/
+mv ~/Downloads/firebase-credentials.json .
 
 # Настройте каналы
 nano config.yaml
