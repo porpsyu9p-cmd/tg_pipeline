@@ -7,17 +7,19 @@ from telethon.errors import (
     FloodWaitError,
 )
 from PIL import Image
-from state_manager import increment_processed, set_total, get_last_id, set_last_id
-from firebase_manager import save_post
+from app.state_manager import increment_processed, set_total, get_last_id, set_last_id
+from app.firebase_manager import save_post
 # Убираем импорт, так как перевод здесь больше не нужен
-# from translation import translate_text
+# from app.translation import translate_text
 
 # === 0. Ключи и конфиг ===
 load_dotenv()
 TELEGRAM_API_ID = int(os.getenv("TELEGRAM_API_ID"))
 TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
 
-with open("config.yaml","r",encoding="utf-8") as f:
+# Путь к config.yaml относительно app/
+config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.yaml")
+with open(config_path, "r", encoding="utf-8") as f:
     CFG = yaml.safe_load(f)
 
 # Целевой канал и доставка больше не нужны
@@ -323,7 +325,9 @@ async def process_channel(client: TelegramClient, ch: str, limit: int):
 
 async def main(limit: int = 100, period_hours: int | None = None):
     """Основная функция, теперь принимает лимит постов."""
-    client = TelegramClient("session", TELEGRAM_API_ID, TELEGRAM_API_HASH)
+    # Путь к session файлу в backend/
+    session_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "session")
+    client = TelegramClient(session_path, TELEGRAM_API_ID, TELEGRAM_API_HASH)
     try:
         await client.start()
         me = await client.get_me()

@@ -2,7 +2,7 @@
 # Этот модуль служит фасадом для управления состоянием пайплайна в Firestore.
 
 from firebase_admin import firestore
-from firebase_manager import get_state_document, update_state, set_state
+from app.firebase_manager import get_state_document, update_state, set_state
 
 DEFAULT_STATE = {
     "processed": 0,

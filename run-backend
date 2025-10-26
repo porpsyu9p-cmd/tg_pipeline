@@ -1,0 +1,18 @@
+#!/bin/bash
+cd "$(dirname "$0")/backend"
+
+echo "🚀 Backend..."
+
+# Создаем venv если нет
+if [ ! -d "venv" ]; then
+    echo "📦 Creating venv..."
+    python3 -m venv venv
+fi
+
+# Всегда обновляем зависимости (используем прямой путь)
+echo "📦 Installing dependencies..."
+./venv/bin/pip install -q -r requirements.txt
+
+echo "✨ http://localhost:8000"
+./venv/bin/uvicorn app.web:app --reload --port 8000
+

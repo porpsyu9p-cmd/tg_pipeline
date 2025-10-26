@@ -6,10 +6,10 @@ import asyncio
 from pydantic import BaseModel
 
 # Импортируем вашу основную функцию и управление состоянием
-from main import main as run_pipeline_main
-from state_manager import get_state, set_running, reset_state, set_finished
-from firebase_manager import initialize_firestore, get_all_posts, get_post, update_post
-from translation import translate_text
+from app.main import main as run_pipeline_main
+from app.state_manager import get_state, set_running, reset_state, set_finished
+from app.firebase_manager import initialize_firestore, get_all_posts, get_post, update_post
+from app.translation import translate_text
 
 # Инициализируем Firestore при старте
 initialize_firestore()
@@ -250,12 +250,13 @@ async def debug_send_text(payload: EchoPayload):
         load_dotenv()
         api_id = int(os.getenv("TELEGRAM_API_ID"))
         api_hash = os.getenv("TELEGRAM_API_HASH")
-        client = TelegramClient("session", api_id, api_hash)
+        session_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "session")
+        client = TelegramClient(session_path, api_id, api_hash)
         await client.start()
         await client.send_message("me", f"[debug] {payload.text}")
-        # отправка в канал назначения
-        from main import TARGET
-        await client.send_message(TARGET, f"[debug] {payload.text}")
+        # отправка в канал назначения (если нужно)
+        # from app.main import TARGET
+        # await client.send_message(TARGET, f"[debug] {payload.text}")
         await client.disconnect()
         return {"ok": True, "message": "debug text sent"}
     except Exception as e:

@@ -4,7 +4,10 @@ from firebase_admin import credentials, firestore
 def initialize_firestore():
     """Initializes the Firestore client, safely checking if it's already initialized."""
     if not firebase_admin._apps:
-        cred = credentials.Certificate("firebase-credentials.json")
+        import os
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cred_path = os.path.join(base_dir, "..", "shared", "firebase-credentials.json")
+        cred = credentials.Certificate(cred_path)
         firebase_admin.initialize_app(cred)
     
     return firestore.client()
