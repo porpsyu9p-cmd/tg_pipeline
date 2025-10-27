@@ -1,54 +1,68 @@
 import React from 'react';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 
-const PostCard = ({ post, onTranslate }) => {
-  const formatDate = (timestamp) => {
-    if (!timestamp || !timestamp.seconds) return 'N/A';
-    return new Date(timestamp.seconds * 1000).toLocaleString();
-  };
-
+const PostCard = ({ post, onTranslate, onDelete }) => {
   return (
-    <Card className='shadow-lg bg-gray-900/70 border-gray-700 text-white'>
-      <CardHeader>
-        <CardTitle className='text-lg font-bold text-cyan-400'>
-          Post from: {post.source_channel}
-        </CardTitle>
-        <p className='text-xs text-gray-400'>
-          Original ID: {post.original_message_id} | Saved: {formatDate(post.saved_at)}
-        </p>
-      </CardHeader>
-      <CardContent className='space-y-4'>
-        <div>
-          <h4 className='font-semibold text-gray-300 mb-2'>Original Text:</h4>
-          <p className='text-sm text-gray-200 whitespace-pre-wrap bg-black/50 p-3 rounded-md'>
-            {post.content || 'No text content.'}
+    <Card className='hover:shadow-md transition-shadow rounded-lg'>
+      <CardContent className='p-4 space-y-3'>
+        <div className='flex items-start justify-between gap-3'>
+          <div className='flex-1 min-w-0'>
+            <p className='text-sm font-semibold truncate'>{post.source_channel}</p>
+            <p className='text-xs text-muted-foreground mt-0.5'>ID: {post.original_message_id}</p>
+          </div>
+          <div className='flex gap-2 items-center shrink-0'>
+            <Badge variant='secondary' className='text-xs px-2 py-1 rounded-md font-medium'>
+              👁 {post.original_views || 0}
+            </Badge>
+            {post.is_top_post && (
+              <Badge variant='secondary' className='text-xs px-2 py-1 rounded-md font-medium'>
+                ⭐
+              </Badge>
+            )}
+          </div>
+        </div>
+        <div className='space-y-2'>
+          <p className='text-sm font-medium'>Оригинал</p>
+          <p className='text-sm text-muted-foreground whitespace-pre-wrap bg-muted p-3 rounded-md line-clamp-3'>
+            {post.content || 'Нет текста'}
           </p>
         </div>
         {post.translated_content && (
-          <div>
-            <h4 className='font-semibold text-gray-300 mb-2'>
-              Translated Text ({post.target_lang}):
-            </h4>
-            <p className='text-sm text-yellow-200 whitespace-pre-wrap bg-black/50 p-3 rounded-md'>
+          <div className='space-y-2'>
+            <p className='text-sm font-medium'>Перевод</p>
+            <p className='text-sm text-muted-foreground whitespace-pre-wrap bg-muted p-3 rounded-md line-clamp-3'>
               {post.translated_content}
             </p>
           </div>
         )}
-      </CardContent>
-      <CardFooter className='flex justify-between items-center'>
-        <div className='flex gap-2 flex-wrap'>
-          <Badge variant='secondary'>Views: {post.original_views || 0}</Badge>
-          {post.is_top_post && <Badge variant='destructive'>Top Post</Badge>}
-          {post.is_merged && <Badge variant='outline'>Merged</Badge>}
-        </div>
-        {!post.translated_content && post.content && (
-          <Button onClick={() => onTranslate(post.id, 'EN')} size='sm'>
-            Translate to EN
+        <div className='flex gap-2'>
+          {!post.translated_content && post.content && (
+            <Button
+              onClick={() => onTranslate(post.id, 'EN')}
+              size='sm'
+              variant='outline'
+              className='flex-1'
+            >
+              Перевести на английский
+            </Button>
+          )}
+          <Button
+            onClick={() => {
+              const confirmed = window.confirm('Вы уверены, что хотите удалить этот пост?');
+              if (confirmed) {
+                onDelete(post.id);
+              }
+            }}
+            size='sm'
+            variant='destructive'
+            className={!post.translated_content && post.content ? 'w-auto' : 'w-full'}
+          >
+            Удалить
           </Button>
-        )}
-      </CardFooter>
+        </div>
+      </CardContent>
     </Card>
   );
 };

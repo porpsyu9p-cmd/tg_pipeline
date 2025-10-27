@@ -5,8 +5,8 @@ const api = axios.create({
 });
 
 class PipelineAPI {
-  run(limit = 100, period_hours = null) {
-    return api.post('/run', { limit, period_hours });
+  run(limit = 100, period_hours = null, channel_url = null, is_top_posts = false) {
+    return api.post('/run', { limit, period_hours, channel_url, is_top_posts });
   }
 
   stop() {
@@ -33,4 +33,30 @@ export const getPosts = () => {
 
 export const translatePost = (postId, target_lang = 'EN') => {
   return api.post(`/posts/${postId}/translate`, { target_lang });
+};
+
+export const deletePost = (postId) => {
+  return api.delete(`/posts/${postId}`);
+};
+
+export const deleteAllPosts = () => {
+  return api.delete('/posts');
+};
+
+// --- API для работы с каналами ---
+
+export const saveChannel = (username) => {
+  return api.post('/channels', { username });
+};
+
+export const getCurrentChannel = () => {
+  return api.get('/channels/current');
+};
+
+export const checkChannel = (username) => {
+  return api.get(`/channels/${username}/check`);
+};
+
+export const deleteCurrentChannel = () => {
+  return api.delete('/channels/current');
 };

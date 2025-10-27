@@ -26,13 +26,13 @@ export const usePipeline = () => {
     }
   }, []);
 
-  const runPipeline = useCallback(async (postLimit, periodHours) => {
+  const runPipeline = useCallback(async (postLimit, periodHours, channelUrl, isTopPosts) => {
     setIsLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const response = await pipelineAPI.run(postLimit, periodHours);
+      const response = await pipelineAPI.run(postLimit, periodHours, channelUrl, isTopPosts);
       setSuccess(response.data.message);
     } catch (err) {
       const errorMessage = err.response?.data?.message || MESSAGES.ERROR.PIPELINE_START;

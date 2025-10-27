@@ -1,171 +1,240 @@
 import React from 'react';
 import { usePipeline } from './hooks/usePipeline';
 import { usePostLimit } from './hooks/usePostLimit';
+import { saveChannel, checkChannel, deleteCurrentChannel, getCurrentChannel } from './services/api';
 import StatusIndicator from './components/StatusIndicator';
 import { ProgressSection } from './components/ProgressSection';
 import { ControlButtons } from './components/ControlButtons';
 import { MessageAlerts } from './components/MessageAlerts';
-import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
-import { Input } from './components/ui/input';
-import { Button } from './components/ui/button';
-import TranslationTester from './components/TranslationTester';
+import { Card, CardContent } from './components/ui/card';
+import { NumberInput } from './components/ui/number-input';
+import { Switch } from './components/ui/switch';
+import { ChannelInput } from './components/ui/channel-input';
 import PostsList from './components/PostsList';
 
 function App() {
-  const {
-    status,
-    isLoading,
-    error,
-    success,
-    fetchStatus,
-    runPipeline,
-    stopPipeline,
-    clearMessages,
-  } = usePipeline();
-  const { postLimit, validationError, handlePostLimitChange, setPostLimitValue } = usePostLimit();
-  const [periodHours, setPeriodHours] = React.useState(null);
+  const { status, error, success, runPipeline, stopPipeline } = usePipeline();
+  const { postLimit, validationError, handlePostLimitChange } = usePostLimit();
+  const [periodHours, setPeriodHours] = React.useState(1);
+  const [channelUsername, setChannelUsername] = React.useState('');
+  const [isChannelSaved, setIsChannelSaved] = React.useState(false);
+  const [isTopPosts, setIsTopPosts] = React.useState(false);
+
+  // Загружаем сохраненный канал при инициализации
+  React.useEffect(() => {
+    // Сначала пробуем загрузить из Firebase
+    getCurrentChannel()
+      .then((response) => {
+        if (response.data.channel && response.data.channel.username) {
+          const username = response.data.channel.username;
+          setChannelUsername(username);
+          setIsChannelSaved(true);
+          // Сохраняем в localStorage для быстрого доступа
+          localStorage.setItem('lastUsedChannel', username);
+        } else {
+          // Если в Firebase нет канала, пробуем localStorage
+          const savedChannel = localStorage.getItem('lastUsedChannel');
+          if (savedChannel) {
+            setChannelUsername(savedChannel);
+            setIsChannelSaved(false); // Не сохранен в Firebase
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load saved channel:', err);
+        // Fallback к localStorage
+        const savedChannel = localStorage.getItem('lastUsedChannel');
+        if (savedChannel) {
+          setChannelUsername(savedChannel);
+          setIsChannelSaved(false);
+        }
+      });
+  }, []);
 
   const handleRun = () => {
     if (validationError) return;
-    runPipeline(postLimit, periodHours);
+    // Преобразуем username в полный URL для бэкенда
+    const channelUrl = channelUsername.startsWith('@')
+      ? `t.me/${channelUsername.slice(1)}`
+      : `t.me/${channelUsername}`;
+    runPipeline(postLimit, periodHours, channelUrl, isTopPosts);
+  };
+
+  const handleChannelSave = async (username) => {
+    if (!username.trim()) {
+      return;
+    }
+
+    try {
+      const response = await saveChannel(username);
+      if (response.data.ok) {
+        setIsChannelSaved(true);
+        console.log('Channel saved successfully');
+      }
+    } catch (err) {
+      console.error('Failed to save channel:', err);
+      alert('Ошибка при сохранении канала');
+    }
+  };
+
+  const handleChannelUnsave = async (username) => {
+    if (!username.trim()) {
+      return;
+    }
+
+    try {
+      const response = await deleteCurrentChannel();
+      if (response.data.ok) {
+        setIsChannelSaved(false);
+        console.log('Channel removed successfully');
+      }
+    } catch (err) {
+      console.error('Failed to unsave channel:', err);
+      alert('Ошибка при удалении канала');
+    }
+  };
+
+  const handleChannelChange = async (username) => {
+    setChannelUsername(username);
+
+    // Сохраняем в localStorage
+    if (username.trim()) {
+      localStorage.setItem('lastUsedChannel', username);
+    } else {
+      localStorage.removeItem('lastUsedChannel');
+    }
+
+    // Сбрасываем состояние при очистке поля
+    if (!username.trim()) {
+      setIsChannelSaved(false);
+      return;
+    }
+
+    // Проверяем, сохранен ли канал
+    try {
+      const response = await checkChannel(username);
+      setIsChannelSaved(response.data.is_saved);
+    } catch (err) {
+      console.error('Failed to check channel:', err);
+      setIsChannelSaved(false);
+    }
   };
 
   return (
-    <div className='min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800'>
-      <div className='container mx-auto px-4 py-8'>
-        <div className='max-w-4xl mx-auto'>
-          {/* Header */}
-          <div className='text-center mb-8'>
-            <h1 className='text-4xl font-bold bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-clip-text text-transparent mb-4'>
-              🤖 Telegram Pipeline
-            </h1>
-            <p className='text-gray-400 text-lg'>
-              Автоматический парсер и пересылка контента из Telegram каналов
-            </p>
-          </div>
+    <div className='min-h-screen bg-background'>
+      <div className='max-w-7xl mx-auto px-6 py-8'>
+        {/* Header */}
+        <div className='mb-8'>
+          <h1 className='text-2xl font-bold mb-1'>Parser322</h1>
+        </div>
 
-          {/* Main Card */}
-          <Card className='shadow-2xl bg-black/80 backdrop-blur-sm border-gray-800'>
-            <CardHeader>
-              <CardTitle className='text-2xl font-bold bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-clip-text text-transparent'>
-                Управление парсером
-              </CardTitle>
-            </CardHeader>
-            <CardContent className='space-y-6'>
-              {/* Status Section */}
-              <div className='space-y-4'>
-                <h3 className='text-lg font-semibold text-gray-300'>Статус</h3>
-                <StatusIndicator
-                  isRunning={status.is_running}
-                  finished={status.finished}
-                  processed={status.processed}
-                  total={status.total}
+        {/* Main Card */}
+        <Card className='shadow-sm rounded-lg'>
+          <CardContent className='p-6 space-y-6'>
+            {/* Channel Input Section */}
+            <div>
+              <label className='block text-sm font-medium mb-2'>Канал</label>
+              <ChannelInput
+                value={channelUsername}
+                onChange={handleChannelChange}
+                onSave={handleChannelSave}
+                onUnsave={handleChannelUnsave}
+                isSaved={isChannelSaved}
+                disabled={status.is_running}
+                placeholder='канал'
+              />
+            </div>
+
+            <hr className='border-border' />
+
+            {/* Controls Section - Horizontal Layout */}
+            <div className='flex items-start gap-8 h-20'>
+              {/* Number Controls */}
+              <div className='flex gap-8'>
+                <NumberInput
+                  label='Количество постов'
+                  value={postLimit}
+                  onChange={(value) =>
+                    handlePostLimitChange({ target: { value: value.toString() } })
+                  }
+                  min={1}
+                  max={1000}
+                  disabled={status.is_running}
                 />
-              </div>
 
-              {/* Progress Section */}
-              {status.total > 0 && (
-                <ProgressSection processed={status.processed} total={status.total} />
-              )}
-
-              {/* Control Section */}
-              <div className='space-y-4'>
-                <h3 className='text-lg font-semibold text-gray-300'>Управление</h3>
-
-                <div className='flex flex-col sm:flex-row gap-4 items-end'>
-                  <div className='flex-1'>
-                    <label className='block text-sm font-medium text-gray-400 mb-2'>
-                      Лимит постов
-                    </label>
-                    <Input
-                      type='number'
-                      value={postLimit}
-                      onChange={handlePostLimitChange}
-                      placeholder='Введите лимит постов'
-                      min='1'
-                      max='1000'
+                <div className='relative'>
+                  <div className='absolute left-0 top-0 h-20 w-px bg-border'></div>
+                  <div className='pl-8'>
+                    <NumberInput
+                      label='Период в часах'
+                      value={periodHours}
+                      onChange={setPeriodHours}
+                      min={1}
+                      max={168}
                       disabled={status.is_running}
-                      className='bg-gray-900/50 border-gray-700 text-white placeholder-gray-500'
                     />
-                    {validationError && (
-                      <p className='text-red-400 text-sm mt-1'>{validationError}</p>
-                    )}
                   </div>
-
-                  <div className='flex flex-wrap gap-2'>
-                    {[5, 10, 15, 20, 25, 50].map((v) => (
-                      <Button
-                        key={v}
-                        type='button'
-                        variant='secondary'
-                        disabled={status.is_running}
-                        className='bg-gray-800 hover:bg-gray-700 text-gray-200'
-                        onClick={() => setPostLimitValue(v)}
-                      >
-                        {v}
-                      </Button>
-                    ))}
-                  </div>
-
-                  <div className='flex flex-col sm:flex-row gap-2 items-end'>
-                    <div>
-                      <label className='block text-sm font-medium text-gray-400 mb-2'>
-                        Период (часы)
-                      </label>
-                      <div className='flex flex-wrap gap-2'>
-                        {[1, 2, 3, 6, 12, 24].map((h) => (
-                          <Button
-                            key={h}
-                            type='button'
-                            variant='secondary'
-                            disabled={status.is_running}
-                            className={`bg-gray-800 hover:bg-gray-700 text-gray-200 ${
-                              periodHours === h ? 'ring-2 ring-blue-500' : ''
-                            }`}
-                            onClick={() => setPeriodHours(h)}
-                          >
-                            {h}ч
-                          </Button>
-                        ))}
-                        <Button
-                          type='button'
-                          variant='ghost'
-                          disabled={status.is_running}
-                          className='text-gray-300'
-                          onClick={() => setPeriodHours(null)}
-                        >
-                          сброс
-                        </Button>
-                      </div>
-                      <p className='text-xs text-gray-500 mt-1'>
-                        Если не выбрано — используется настройка в config.yaml
-                      </p>
-                    </div>
-                  </div>
-
-                  <ControlButtons
-                    onRun={handleRun}
-                    onStop={stopPipeline}
-                    isRunning={status.is_running}
-                    disabled={!!validationError}
-                  />
                 </div>
               </div>
 
-              {/* Messages */}
-              <MessageAlerts error={error} success={success} />
-            </CardContent>
-          </Card>
+              {/* Toggle Switch */}
+              <div className='relative'>
+                <div className='absolute left-0 top-0 h-20 w-px bg-border'></div>
+                <div className='pl-8'>
+                  <div className='flex items-start justify-between gap-8'>
+                    <div>
+                      <label className='text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70'>
+                        Только топ посты
+                      </label>
+                    </div>
+                    <Switch
+                      checked={isTopPosts}
+                      onCheckedChange={setIsTopPosts}
+                      disabled={status.is_running}
+                      className='mt-0.5'
+                    />
+                  </div>
+                </div>
+              </div>
 
-          {/* Translation Tester */}
-          <div className='mt-8'>
-            <TranslationTester />
-          </div>
+              {/* Action Buttons */}
+              <div className='relative'>
+                <div className='absolute left-0 top-0 h-20 w-px bg-border'></div>
+                <div className='pl-8 flex items-center h-20'>
+                  <div className='flex items-center gap-3'>
+                    <ControlButtons
+                      onRun={handleRun}
+                      onStop={stopPipeline}
+                      isRunning={status.is_running}
+                      disabled={!!validationError}
+                    />
 
-          {/* Saved Posts List */}
-          <div className='mt-8'>
-            <PostsList />
-          </div>
+                    <StatusIndicator
+                      isRunning={status.is_running}
+                      finished={status.finished}
+                      processed={status.processed}
+                      total={status.total}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {status.total > 0 && (
+              <ProgressSection processed={status.processed} total={status.total} />
+            )}
+            {validationError && (
+              <p className='text-red-600 text-sm font-medium'>{validationError}</p>
+            )}
+
+            {/* Messages */}
+            <MessageAlerts error={error} success={success} />
+          </CardContent>
+        </Card>
+
+        {/* Saved Posts List */}
+        <div className='mt-3'>
+          <PostsList />
         </div>
       </div>
     </div>

@@ -8,11 +8,14 @@ from pydantic import BaseModel
 # Импортируем вашу основную функцию и управление состоянием
 from app.main import main as run_pipeline_main
 from app.state_manager import get_state, set_running, reset_state, set_finished
-from app.firebase_manager import initialize_firestore, get_all_posts, get_post, update_post
+from app.firebase_manager import initialize_firestore, get_all_posts, get_post, update_post, delete_post, delete_all_posts, save_channel, get_saved_channel, is_channel_saved, delete_saved_channel, cleanup_old_channels_collection
 from app.translation import translate_text
 
 # Инициализируем Firestore при старте
 initialize_firestore()
+
+# Выполняем миграцию для очистки старых коллекций
+cleanup_old_channels_collection()
 
 app = FastAPI()
 
@@ -118,13 +121,13 @@ async def status_endpoint():
     """Возвращает текущее состояние прогресса."""
     return get_state()
 
-async def run_pipeline_task(limit: int, period_hours: int | None = None):
+async def run_pipeline_task(limit: int, period_hours: int | None = None, channel_url: str | None = None, is_top_posts: bool = False):
     """Обёртка для запуска задачи и управления состоянием."""
     global current_task
     set_running(True)
     try:
-        print(f"Starting pipeline with limit: {limit}")
-        await run_pipeline_main(limit=limit, period_hours=period_hours)
+        print(f"Starting pipeline with limit: {limit}, channel: {channel_url or 'from config'}, top_posts: {is_top_posts}")
+        await run_pipeline_main(limit=limit, period_hours=period_hours, channel_url=channel_url, is_top_posts=is_top_posts)
         print("Pipeline finished successfully.")
     except asyncio.CancelledError:
         print("Pipeline task was cancelled.")
@@ -145,11 +148,18 @@ async def trigger_pipeline(request: Request):
     data = await request.json()
     limit = data.get("limit", 100)
     period_hours = data.get("period_hours")
+    channel_url = data.get("channel_url")
+    is_top_posts = data.get("is_top_posts", False)
 
     # Сбрасываем состояние перед новым запуском
     reset_state()
     
-    task = asyncio.create_task(run_pipeline_task(limit=limit, period_hours=period_hours))
+    task = asyncio.create_task(run_pipeline_task(
+        limit=limit, 
+        period_hours=period_hours,
+        channel_url=channel_url,
+        is_top_posts=is_top_posts
+    ))
     current_task = task
     
     return {"message": f"Процесс парсинга запущен. Лимит: {limit} постов."}
@@ -234,6 +244,80 @@ async def translate_post_endpoint(post_id: str, payload: ManualTranslationPayloa
         return {"ok": True, "message": "Post translated and updated successfully."}
     except Exception as e:
         print(f"Manual translation endpoint error: {e}")
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+@app.delete("/posts/{post_id}")
+async def delete_post_endpoint(post_id: str):
+    """Удаляет конкретный пост по ID."""
+    try:
+        success = delete_post(post_id)
+        if success:
+            return {"ok": True, "message": "Post deleted successfully."}
+        else:
+            return JSONResponse(status_code=404, content={"ok": False, "error": "Post not found or could not be deleted"})
+    except Exception as e:
+        print(f"Delete post endpoint error: {e}")
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+@app.delete("/posts")
+async def delete_all_posts_endpoint():
+    """Удаляет все сохраненные посты."""
+    try:
+        deleted_count = delete_all_posts()
+        return {"ok": True, "message": f"Successfully deleted {deleted_count} posts."}
+    except Exception as e:
+        print(f"Delete all posts endpoint error: {e}")
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+# --- Эндпоинты для работы с каналами ---
+
+class ChannelPayload(BaseModel):
+    username: str
+
+@app.post("/channels")
+async def save_channel_endpoint(payload: ChannelPayload):
+    """Сохраняет канал в БД."""
+    try:
+        success = save_channel(payload.username)
+        if success:
+            return {"ok": True, "message": "Channel saved successfully."}
+        else:
+            return JSONResponse(status_code=400, content={"ok": False, "error": "Failed to save channel"})
+    except Exception as e:
+        print(f"Save channel endpoint error: {e}")
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+@app.get("/channels/current")
+async def get_current_channel_endpoint():
+    """Получает текущий сохраненный канал."""
+    try:
+        channel = get_saved_channel()
+        return {"ok": True, "channel": channel}
+    except Exception as e:
+        print(f"Get current channel endpoint error: {e}")
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+@app.get("/channels/{username}/check")
+async def check_channel_endpoint(username: str):
+    """Проверяет, сохранен ли канал."""
+    try:
+        is_saved = is_channel_saved(username)
+        return {"ok": True, "is_saved": is_saved}
+    except Exception as e:
+        print(f"Check channel endpoint error: {e}")
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+@app.delete("/channels/current")
+async def delete_current_channel_endpoint():
+    """Удаляет текущий сохраненный канал."""
+    try:
+        success = delete_saved_channel()
+        if success:
+            return {"ok": True, "message": "Channel deleted successfully."}
+        else:
+            return JSONResponse(status_code=404, content={"ok": False, "error": "No saved channel found"})
+    except Exception as e:
+        print(f"Delete current channel endpoint error: {e}")
         return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
 
 

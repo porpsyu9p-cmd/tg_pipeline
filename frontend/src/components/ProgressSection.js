@@ -7,13 +7,11 @@ const ProgressSection = ({ processed, total }) => {
 
   return (
     <div className='space-y-2'>
-      <div className='flex justify-between text-sm text-gray-400'>
-        <span>Прогресс</span>
-        <span>
-          {processed} / {total}
-        </span>
+      <div className='flex justify-between text-sm'>
+        <span className='font-medium'>Прогресс</span>
+        <span className='text-muted-foreground'>{Math.round(progress)}%</span>
       </div>
-      <Progress value={progress} className='h-2' />
+      <Progress value={progress} className='h-2 rounded-full' />
     </div>
   );
 };

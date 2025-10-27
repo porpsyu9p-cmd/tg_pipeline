@@ -259,32 +259,40 @@ async def process_channel(client: TelegramClient, ch: str, limit: int):
     # last_id = get_last_id(ch) # Проверка на дубликаты отключена
 
     # Запрашиваем последние N постов без учета min_id
-    msgs = [m async for m in client.iter_messages(entity, limit=limit)]
-    if not msgs:
+    all_msgs = [m async for m in client.iter_messages(entity, limit=limit*2)]  # Берём больше для фильтрации
+    if not all_msgs:
         print(f"No messages found for {ch}")
         set_total(0)
         return
 
-    set_total(len(msgs)) # Устанавливаем общее количество для этого канала
-    msgs.reverse()  # от старых к новым
-
-    for m in msgs:
-        # На каждой итерации даём возможность циклу событий обработать отмену
-        await asyncio.sleep(0)
-
-        # Пропускаем посты с видео или GIF (анимации)
+    # Фильтруем сообщения, исключая видео/GIF
+    filtered_msgs = []
+    for m in all_msgs:
         try:
             media = getattr(m, "media", None)
             doc = getattr(media, "document", None) if media else None
             mime = (getattr(doc, "mime_type", "") or "").lower() if doc else ""
             attrs = getattr(doc, "attributes", []) or []
             is_animated = any(getattr(a, "animated", False) or a.__class__.__name__ == "DocumentAttributeAnimated" for a in attrs)
-            if (mime.startswith("video") or mime == "image/gif" or is_animated):
-                increment_processed()
-                continue
+            if not (mime.startswith("video") or mime == "image/gif" or is_animated):
+                filtered_msgs.append(m)
+                if len(filtered_msgs) >= limit:  # Останавливаемся когда набрали нужное количество
+                    break
         except Exception:
-            # В случае ошибки определения типа медиа не падаем — продолжаем обычную обработку
-            pass
+            # В случае ошибки определения типа медиа включаем сообщение
+            filtered_msgs.append(m)
+            if len(filtered_msgs) >= limit:
+                break
+
+    msgs = filtered_msgs
+    set_total(len(msgs)) # Устанавливаем количество только отфильтрованных сообщений
+    msgs.reverse()  # от старых к новым
+
+    for m in msgs:
+        # На каждой итерации даём возможность циклу событий обработать отмену
+        await asyncio.sleep(0)
+
+        # Сообщения уже отфильтрованы, дополнительная проверка не нужна
 
         text = (m.message or "").strip()
         media_paths = await download_and_brand(client, m)
@@ -323,8 +331,8 @@ async def process_channel(client: TelegramClient, ch: str, limit: int):
         # set_last_id(ch, max(current_last_id, m.id))
         increment_processed() # Увеличиваем счетчик после успешной обработки
 
-async def main(limit: int = 100, period_hours: int | None = None):
-    """Основная функция, теперь принимает лимит постов."""
+async def main(limit: int = 100, period_hours: int | None = None, channel_url: str | None = None, is_top_posts: bool = False):
+    """Основная функция, теперь принимает лимит постов, канал и режим парсинга."""
     # Путь к session файлу в backend/
     session_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "session")
     client = TelegramClient(session_path, TELEGRAM_API_ID, TELEGRAM_API_HASH)
@@ -333,8 +341,13 @@ async def main(limit: int = 100, period_hours: int | None = None):
         me = await client.get_me()
         print(f"Started session as {me.username or me.first_name}.")
         
+        # Определяем список каналов
+        channels = [channel_url] if channel_url else CFG["channels"]
+        
+        # Определяем режим парсинга (топ посты или обычный)
         top_cfg = (CFG.get("top_posts") or {})
-        enabled_top = bool(top_cfg.get("enabled", False))
+        enabled_top = is_top_posts or bool(top_cfg.get("enabled", False))
+        
         if enabled_top:
             # Период из запроса в часах имеет приоритет над конфигом в днях
             period_days = int(top_cfg.get("period_days", 7))
@@ -342,10 +355,10 @@ async def main(limit: int = 100, period_hours: int | None = None):
                 # переводим часы в дни с плавающей точкой
                 period_days = max(0.0417, float(period_hours) / 24.0)
             counts = top_cfg.get("top_by") or {"likes": 2, "comments": 2, "views": 2}
-            for ch in CFG["channels"]:
+            for ch in channels:
                 await process_top_posts(client, ch, period_days=period_days, top_counts=counts, desired_total=limit)
         else:
-            for ch in CFG["channels"]:
+            for ch in channels:
                 await process_channel(client, ch, limit=limit)
     except asyncio.CancelledError:
         print("Main task was cancelled. Disconnecting...")

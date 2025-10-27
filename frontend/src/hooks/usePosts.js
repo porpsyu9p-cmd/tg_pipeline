@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { getPosts, translatePost } from '../services/api';
+import { getPosts, translatePost, deletePost, deleteAllPosts } from '../services/api';
 
 export const usePosts = () => {
   const [posts, setPosts] = useState([]);
@@ -38,11 +38,41 @@ export const usePosts = () => {
     [fetchPosts]
   );
 
+  const handleDeletePost = useCallback(
+    async (postId) => {
+      try {
+        await deletePost(postId);
+        // После успешного удаления обновляем список
+        fetchPosts();
+      } catch (err) {
+        console.error(`Failed to delete post ${postId}:`, err);
+        alert(`Error deleting post: ${err.message}`);
+      }
+    },
+    [fetchPosts]
+  );
+
+  const handleDeleteAllPosts = useCallback(async () => {
+    try {
+      const response = await deleteAllPosts();
+      if (response.data.ok) {
+        // После успешного удаления всех постов обновляем список
+        fetchPosts();
+        alert(response.data.message);
+      }
+    } catch (err) {
+      console.error('Failed to delete all posts:', err);
+      alert(`Error deleting all posts: ${err.message}`);
+    }
+  }, [fetchPosts]);
+
   return {
     posts,
     isLoading,
     error,
     fetchPosts,
     handleTranslatePost,
+    handleDeletePost,
+    handleDeleteAllPosts,
   };
 };

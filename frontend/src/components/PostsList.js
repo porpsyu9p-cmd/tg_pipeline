@@ -1,41 +1,77 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { usePosts } from '../hooks/usePosts';
+import { usePipeline } from '../hooks/usePipeline';
 import PostCard from './PostCard';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 
 const PostsList = () => {
-  const { posts, isLoading, error, fetchPosts, handleTranslatePost } = usePosts();
+  const {
+    posts,
+    isLoading,
+    error,
+    fetchPosts,
+    handleTranslatePost,
+    handleDeletePost,
+    handleDeleteAllPosts,
+  } = usePosts();
+  const { status } = usePipeline();
+  const prevFinishedRef = useRef(false);
 
   useEffect(() => {
     fetchPosts();
   }, [fetchPosts]);
 
+  // Автоматически обновляем посты когда парсинг завершается
+  useEffect(() => {
+    if (status.finished && !prevFinishedRef.current) {
+      fetchPosts();
+    }
+    prevFinishedRef.current = status.finished;
+  }, [status.finished, fetchPosts]);
+
   if (isLoading) {
-    return <p className='text-center text-gray-400'>Loading posts...</p>;
+    return <p className='text-sm text-muted-foreground'>Загрузка постов...</p>;
   }
 
   if (error) {
-    return <p className='text-center text-red-400'>Error: {error}</p>;
+    return <p className='text-sm text-red-600 font-medium'>Ошибка: {error}</p>;
   }
 
+  const handleDeleteAllClick = () => {
+    if (posts.length === 0) return;
+
+    const confirmed = window.confirm(
+      `Вы уверены, что хотите удалить все ${posts.length} постов? Это действие нельзя отменить.`
+    );
+
+    if (confirmed) {
+      handleDeleteAllPosts();
+    }
+  };
+
   return (
-    <Card className='shadow-2xl bg-black/80 backdrop-blur-sm border-gray-800'>
+    <Card className='shadow-sm rounded-lg'>
       <CardHeader className='flex flex-row items-center justify-between'>
-        <CardTitle className='text-2xl font-bold bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-clip-text text-transparent'>
-          Saved Posts
-        </CardTitle>
-        <Button onClick={fetchPosts} variant='outline' size='sm'>
-          Refresh
-        </Button>
+        <CardTitle className='text-lg font-bold'>Сохранённые посты</CardTitle>
+        {posts.length > 0 && (
+          <Button onClick={handleDeleteAllClick} variant='destructive' size='sm'>
+            Очистить все
+          </Button>
+        )}
       </CardHeader>
       <CardContent>
         {posts.length === 0 ? (
-          <p className='text-center text-gray-500'>No posts found.</p>
+          <p className='text-sm text-muted-foreground'>Постов пока нет</p>
         ) : (
-          <div className='space-y-4'>
+          <div className='space-y-3'>
             {posts.map((post) => (
-              <PostCard key={post.id} post={post} onTranslate={handleTranslatePost} />
+              <PostCard
+                key={post.id}
+                post={post}
+                onTranslate={handleTranslatePost}
+                onDelete={handleDeletePost}
+              />
             ))}
           </div>
         )}
